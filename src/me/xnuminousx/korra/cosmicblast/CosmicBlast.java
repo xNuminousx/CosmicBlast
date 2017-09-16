@@ -1,6 +1,7 @@
 package me.xnuminousx.korra.cosmicblast;
 
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
@@ -9,7 +10,6 @@ import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
-import org.bukkit.util.Vector;
 
 import com.projectkorra.projectkorra.GeneralMethods;
 import com.projectkorra.projectkorra.ProjectKorra;
@@ -21,17 +21,14 @@ import com.projectkorra.projectkorra.util.ParticleEffect;
 
 public class CosmicBlast extends AvatarAbility implements AddonAbility {
 	private long cooldown;
-	private double range;
 	private double damage;
-	private boolean isCharged;
-	private boolean launched;
-	private Location origin;
 	private Location location;
-	private Vector direction;
-	private double t;
 	private Permission perm;
-	private boolean doPotEffects;
-	private boolean doDamage;
+	private double radius;
+	private long time;
+	private Material blockType;
+	private byte blockByte;
+	private long minFocusDuration;
 
 	public CosmicBlast(Player player) {
 		super(player);
@@ -39,97 +36,105 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 			return;
 		}
 		setFields();
+		this.time = System.currentTimeMillis();
+		
 		start();
 	}
 	public void setFields() {
 		this.cooldown = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Cooldown");
-		this.range = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Range");
-		this.damage = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Damage");
-		this.doPotEffects = ConfigManager.getConfig().getBoolean("ExtraAbilities.xNuminousx.CosmicBlast.DoPotionEffects");
-		this.doDamage = ConfigManager.getConfig().getBoolean("ExtraAbilities.xNuminousx.CosmicBlast.DoDamage");
+		this.damage = ConfigManager.getConfig().getDouble("ExtraAbilities.xNuminousx.CosmicBlast.Damage");
+		this.radius = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Radius");
+		this.minFocusDuration = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.DurationOfMinimalFocus");
+		this.blockType = Material.REDSTONE_BLOCK;
+		this.location = player.getLocation();
 	}
 	
 	@Override
 	public void progress() {
-		if (player.isDead() || !player.isOnline()) {
+		if (player.isDead() || !player.isOnline() || GeneralMethods.isRegionProtectedFromBuild(this, player.getLocation())) {
+			remove();
 			return;
 		}
-		if ((player.isSneaking()) && (!launched)) {
-			chargeAnimation();
-		} else {
-			if (!isCharged) {
-				remove();
-				return;
-			}
-			if (!launched) {
-				bPlayer.addCooldown(this);
-				launched = true;
-			}
-			blast();
-		}
-
-	}
-	private void chargeAnimation() {
-		t += Math.PI / 32;
-		Location loc = player.getLocation();
-		if (t >= Math.PI * 4) {
-			ParticleEffect.FIREWORKS_SPARK.display(player.getLocation(), 0, 1, 0, 0.03F, 5);
-			ParticleEffect.DRAGON_BREATH.display(player.getLocation(), 0, 0, 0, 0.02F, 2);
-			location = GeneralMethods.getTargetedLocation(player, 1);
-			origin = GeneralMethods.getTargetedLocation(player, 1);
-			direction = GeneralMethods.getTargetedLocation(player, 1).getDirection();
-			isCharged = true;
-			launched = false;
-		}
 		
-		if (isCharged) {
-			loc.getWorld().playSound(loc, Sound.ENTITY_ELDER_GUARDIAN_AMBIENT, 0.2F, 1);
+		if (player.isSneaking()) {
+			selectSource();
 			
 		} else {
-			for (double phi = 0; phi <= Math.PI * 2; phi += Math.PI / 1.5) {
-				double x = 0.3D * (Math.PI * 4 - t) * Math.cos(t + phi);
-	            double y = 1.5D * (Math.PI * 4 - t);
-	            double z = 0.3D * (Math.PI * 4 - t) * Math.sin(t + phi);
-	            loc.add(x, y, z);
-				ParticleEffect.PORTAL.display(loc, 0, 0, 0, 0.1F, 5);
-				ParticleEffect.MOB_SPELL_AMBIENT.display(loc, 0, 0, 0, 0.02F, 2);
-				ParticleEffect.END_ROD.display(loc, 0, 0, 0, 0, 2);
-				ParticleEffect.MAGIC_CRIT.display(loc, 0, 0, 0, 0, 5);
-				loc.subtract(x, y, z);
-				loc.getWorld().playSound(loc, Sound.ENTITY_ELDER_GUARDIAN_AMBIENT, 0.2F, 1);
+			
+			if (System.currentTimeMillis() > time + minFocusDuration) {
+				stealMax();
+			} else if (System.currentTimeMillis() < time + minFocusDuration) {
+				stealMin();
 			}
 		}
 	}
-	private void blast() {
-		direction = GeneralMethods.getTargetedLocation(player, 1).getDirection();
-		location.add(direction);
-		ParticleEffect.MAGIC_CRIT.display(location, 0, 0, 0, 1, 5);
-		ParticleEffect.END_ROD.display(location, 0, 0, 0, 0.05F, 3);
-		ParticleEffect.PORTAL.display(location, 0, 0, 0, 1.5F, 5);
-		location.getWorld().playSound(location, Sound.ENTITY_ELDER_GUARDIAN_CURSE, 1, 0.01F);
-		
-		for (Entity e : GeneralMethods.getEntitiesAroundPoint(location, 2.5D)) {
-			if (((e instanceof LivingEntity)) && (e.getEntityId() != player.getEntityId())) {
-				if (doDamage) {
-					DamageHandler.damageEntity(e, damage, this);
-					
+	
+	private void selectSource() {
+		this.location = player.getLocation();
+		for (Entity entity : GeneralMethods.getEntitiesAroundPoint(player.getLocation(), radius)) {
+			if (((entity instanceof LivingEntity)) && (entity.getEntityId() != player.getEntityId())) {
+				Location target = entity.getLocation();
+				
+				ParticleEffect.SMOKE.display(target, 0.3F, 1, 0.3F, 0.02F, 5);
+				ParticleEffect.FIREWORKS_SPARK.display(location, 0, 0.5F, 0, 0.02F, 2);
+				target.getWorld().playSound(target, Sound.ENTITY_ELDER_GUARDIAN_AMBIENT, 2, 0.5F);
+				
+				if (System.currentTimeMillis() > time + minFocusDuration) {
+					ParticleEffect.DRAGON_BREATH.display(location, 0, 0.5F, 0, 0.02F, 2);
+					ParticleEffect.BLOCK_CRACK.display((ParticleEffect.ParticleData) new ParticleEffect.BlockData(blockType, blockByte), 0.5F, 0.5F, 0.5F, 1, 5, target, 500);
 				}
-				if (doPotEffects) {
-					LivingEntity le = (LivingEntity)e;
-					le.addPotionEffect(new PotionEffect(PotionEffectType.CONFUSION, 200, 1), true);
-					le.addPotionEffect(new PotionEffect(PotionEffectType.SLOW, 200, 1), true);
-					
-				}
-				remove();
-				return;
 			}
 		}
-		if (origin.distance(location) > range) {
-			remove();
-			bPlayer.addCooldown(this);
-			return;
-		}
 	}
+	
+	private void stealMin() {
+		for (Entity entity : GeneralMethods.getEntitiesAroundPoint(player.getLocation(), radius)) {
+			if (((entity instanceof LivingEntity)) && (entity.getEntityId() != player.getEntityId())) {
+				LivingEntity le = (LivingEntity)entity;
+				
+				// Target Effects
+				le.addPotionEffect(new PotionEffect(PotionEffectType.SLOW_DIGGING, 200, 1), true);
+				le.addPotionEffect(new PotionEffect(PotionEffectType.CONFUSION, 200, 1), true);
+				
+				// Player Effects
+				player.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 50, 1), true);
+				player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 200, 2), true);
+				
+				playSound();
+			}
+		}
+		remove();
+		return;
+	}
+	
+	private void stealMax() {
+		for (Entity entity : GeneralMethods.getEntitiesAroundPoint(player.getLocation(), radius)) {
+			if (((entity instanceof LivingEntity)) && (entity.getEntityId() != player.getEntityId())) {
+				LivingEntity le = (LivingEntity)entity;
+				
+				// Target effects
+				le.addPotionEffect(new PotionEffect(PotionEffectType.SLOW_DIGGING, 300, 3), true);
+				le.addPotionEffect(new PotionEffect(PotionEffectType.CONFUSION, 250, 3), true);
+				le.addPotionEffect(new PotionEffect(PotionEffectType.SLOW, 200, 1), true);
+				le.addPotionEffect(new PotionEffect(PotionEffectType.HUNGER, 1000, 5), true);
+				DamageHandler.damageEntity(le, damage, this);
+				
+				// Player effects
+				player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 350, 1), true);
+				player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 150, 3), true);
+				player.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, 200, 1), true);
+				
+				playSound();
+			}
+		}
+		remove();
+		return;
+	}
+	
+	private void playSound() {
+		player.getLocation().getWorld().playSound(location, Sound.ENTITY_ELDER_GUARDIAN_AMBIENT, 0.5F, 2);
+	}
+	
 	@Override
 	public long getCooldown() {
 		return cooldown;
@@ -161,16 +166,16 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 	}
 	@Override
 	public String getDescription() {
-		return "Meditate on your 7th Chakra to gain energy and guidence from the cosmos. Focus this energy outward toward your opponent to exhaust them and deal damage.";
+		return "Focus on the energy of your surrounding opponents. Release shift quickly to extract a small amount of energy from them or keep holding to reach MaxFocus, in which case you can extract more energy from your opponent.";
 	}
 	@Override
 	public String getInstructions() {
-		return "Hold SHIFT until charge animation finishes";
+		return "Hold shift";
 	}
 
 	@Override
 	public String getVersion() {
-		return "1.3";
+		return "2.0";
 	}
 
 	@Override
@@ -183,10 +188,9 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 		perm.setDefault(PermissionDefault.TRUE);
 		
 		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.Cooldown", 5000);
-		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.Range", 20);
-		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.DoPotionEffects", true);
-		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.DoDamage", true);
-		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.Damage", 5);
+		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.Damage", 3);
+		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.Radius", 5);
+		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.DurationOfMinimalFocus", 5000);
 		ConfigManager.defaultConfig.save();
 	}
 
