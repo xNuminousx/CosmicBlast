@@ -7,7 +7,7 @@ import org.bukkit.event.player.PlayerToggleSneakEvent;
 import com.projectkorra.projectkorra.ability.CoreAbility;
 
 public class CosmicBlastListener implements Listener {
-	@EventHandler (ignoreCancelled = true)
+	@EventHandler
 	public void onSwing(PlayerToggleSneakEvent event) {
 		if (event.isCancelled()) {
 			return;
