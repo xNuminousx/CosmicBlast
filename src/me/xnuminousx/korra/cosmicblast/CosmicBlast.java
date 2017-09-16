@@ -30,6 +30,8 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 	private Vector direction;
 	private double t;
 	private Permission perm;
+	private boolean doPotEffects;
+	private boolean doDamage;
 
 	public CosmicBlast(Player player) {
 		super(player);
@@ -40,10 +42,11 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 		start();
 	}
 	public void setFields() {
-		cooldown = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Cooldown");
-		range = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Range");
-		damage = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Damage");
-		
+		this.cooldown = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Cooldown");
+		this.range = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Range");
+		this.damage = ConfigManager.getConfig().getLong("ExtraAbilities.xNuminousx.CosmicBlast.Damage");
+		this.doPotEffects = ConfigManager.getConfig().getBoolean("ExtraAbilities.xNuminousx.CosmicBlast.DoPotionEffects");
+		this.doDamage = ConfigManager.getConfig().getBoolean("ExtraAbilities.xNuminousx.CosmicBlast.DoDamage");
 	}
 	
 	@Override
@@ -78,8 +81,10 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 			isCharged = true;
 			launched = false;
 		}
+		
 		if (isCharged) {
 			loc.getWorld().playSound(loc, Sound.ENTITY_ELDER_GUARDIAN_AMBIENT, 0.2F, 1);
+			
 		} else {
 			for (double phi = 0; phi <= Math.PI * 2; phi += Math.PI / 1.5) {
 				double x = 0.3D * (Math.PI * 4 - t) * Math.cos(t + phi);
@@ -105,10 +110,16 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 		
 		for (Entity e : GeneralMethods.getEntitiesAroundPoint(location, 2.5D)) {
 			if (((e instanceof LivingEntity)) && (e.getEntityId() != player.getEntityId())) {
-				DamageHandler.damageEntity(e, damage, this);
-				LivingEntity le = (LivingEntity)e;
-				le.addPotionEffect(new PotionEffect(PotionEffectType.CONFUSION, 200, 1), true);
-				le.addPotionEffect(new PotionEffect(PotionEffectType.SLOW, 200, 1), true);
+				if (doDamage) {
+					DamageHandler.damageEntity(e, damage, this);
+					
+				}
+				if (doPotEffects) {
+					LivingEntity le = (LivingEntity)e;
+					le.addPotionEffect(new PotionEffect(PotionEffectType.CONFUSION, 200, 1), true);
+					le.addPotionEffect(new PotionEffect(PotionEffectType.SLOW, 200, 1), true);
+					
+				}
 				remove();
 				return;
 			}
@@ -152,13 +163,14 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 	public String getDescription() {
 		return "Meditate on your 7th Chakra to gain energy and guidence from the cosmos. Focus this energy outward toward your opponent to exhaust them and deal damage.";
 	}
-	public String getInstruction() {
+	@Override
+	public String getInstructions() {
 		return "Hold SHIFT until charge animation finishes";
 	}
 
 	@Override
 	public String getVersion() {
-		return "1.0";
+		return "1.3";
 	}
 
 	@Override
@@ -169,14 +181,20 @@ public class CosmicBlast extends AvatarAbility implements AddonAbility {
 		perm = new Permission("bending.ability.cosmicblast");
 		ProjectKorra.plugin.getServer().getPluginManager().addPermission(perm);
 		perm.setDefault(PermissionDefault.TRUE);
+		
+		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.Cooldown", 5000);
+		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.Range", 20);
+		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.DoPotionEffects", true);
+		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.DoDamage", true);
+		ConfigManager.getConfig().addDefault("ExtraAbilities.xNuminousx.CosmicBlast.Damage", 5);
+		ConfigManager.defaultConfig.save();
 	}
 
 	@Override
 	public void stop() {
-		ProjectKorra.plugin.getServer().getLogger().info(getName() + "disabled.");
 		ProjectKorra.plugin.getServer().getPluginManager().removePermission(this.perm);
 		super.remove();
-
+		ProjectKorra.plugin.getServer().getLogger().info(getName() + "disabled.");
 	}
 
 }
